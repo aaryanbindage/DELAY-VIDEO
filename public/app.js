@@ -12,6 +12,7 @@ const remotePlaceholder = document.getElementById('remote-placeholder');
 const delayCanvas = document.getElementById('delay-canvas');
 const muteBtn = document.getElementById('mute-btn');
 const cameraBtn = document.getElementById('camera-btn');
+const screenShareBtn = document.getElementById('screen-share-btn');
 const volumeSlider = document.getElementById('volume-slider');
 const delaySlider = document.getElementById('delay-slider');
 const delayValueEl = document.getElementById('delay-value');
@@ -27,13 +28,16 @@ let delayNode;
 let frameLoopId;
 let isMuted = false;
 let isCameraOff = false;
+let screenStream = null;
+let delaySourceVideoEl; // the hidden <video> that buildDelayedStream() reads frames from
 
 // Mutable so the slider can change it live, mid-call.
 const delayState = { value: parseFloat(delaySlider.value) };
 let peerDelay = null;
 
 function updateLocalLabel() {
-  localLabel.textContent = `You (live) — peer sees you ${delayState.value}s delayed`;
+  const activity = screenStream ? 'sharing screen' : 'live';
+  localLabel.textContent = `You (${activity}) — peer sees you ${delayState.value}s delayed`;
 }
 
 function updateRemoteLabel() {
@@ -115,6 +119,58 @@ volumeSlider.addEventListener('input', (e) => {
   remoteVideo.volume = e.target.value;
 });
 
+// Swaps what the delay pipeline reads frames from (camera vs. screen).
+// The outgoing WebRTC track is always the canvas capture, so this needs no renegotiation.
+function setDelaySource(stream) {
+  delaySourceVideoEl.srcObject = stream;
+  delaySourceVideoEl.play().catch(() => {});
+}
+
+screenShareBtn.addEventListener('click', () => {
+  if (!delaySourceVideoEl) return;
+  if (screenStream) {
+    stopScreenShare();
+  } else {
+    startScreenShare();
+  }
+});
+
+async function startScreenShare() {
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+  } catch (err) {
+    setStatus(`Could not start screen share: ${err.message}`);
+    return;
+  }
+
+  screenStream = stream;
+  setDelaySource(screenStream);
+  localVideo.srcObject = screenStream;
+  updateLocalLabel();
+
+  screenShareBtn.classList.add('active');
+  screenShareBtn.querySelector('.status').textContent = 'Stop Sharing';
+  screenShareBtn.querySelector('.icon').textContent = '🛑';
+
+  // The browser's own "Stop sharing" control also needs to revert us to the camera.
+  screenStream.getVideoTracks()[0].addEventListener('ended', stopScreenShare);
+}
+
+function stopScreenShare() {
+  if (!screenStream) return;
+  screenStream.getTracks().forEach((t) => t.stop());
+  screenStream = null;
+
+  setDelaySource(rawLocalStream);
+  localVideo.srcObject = rawLocalStream;
+  updateLocalLabel();
+
+  screenShareBtn.classList.remove('active');
+  screenShareBtn.querySelector('.status').textContent = 'Share Screen';
+  screenShareBtn.querySelector('.icon').textContent = '🖥️';
+}
+
 async function joinCall(room) {
   joinBtn.disabled = true;
   roomInput.disabled = true;
@@ -160,6 +216,13 @@ function buildDelayedStream(sourceStream, delayState) {
   sourceVideoEl.muted = true;
   sourceVideoEl.playsInline = true;
   sourceVideoEl.play().catch(() => {});
+  sourceVideoEl.addEventListener('loadedmetadata', () => {
+    if (sourceVideoEl.videoWidth) {
+      delayCanvas.width = sourceVideoEl.videoWidth;
+      delayCanvas.height = sourceVideoEl.videoHeight;
+    }
+  });
+  delaySourceVideoEl = sourceVideoEl;
 
   const frameQueue = [];
 
