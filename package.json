@@ -1,0 +1,12 @@
+{
+  "name": "delay-video",
+  "version": "1.0.0",
+  "description": "Two-person video call where each side's stream is delayed 5 seconds before reaching the other person.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
