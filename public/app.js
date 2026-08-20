@@ -256,9 +256,6 @@ async function joinCall(room) {
 
   localVideo.srcObject = rawLocalStream;
   callSection.classList.remove('hidden');
-  
-  // Start honey drops
-  startHoneyDrops();
 
   const url = new URL(window.location.href);
   url.searchParams.set('room', room);
@@ -385,6 +382,8 @@ function removeRemoteTile(peerId) {
   // Only stop honey drops if no peers remain
   if (remotePeers.size === 0) {
     stopHoneyDrops();
+    // Hide call section if no peers
+    callSection.classList.add('hidden');
   }
 }
 
@@ -421,6 +420,10 @@ function connectSignaling(room) {
       case 'peer-joined':
         addRemoteTile(msg.id, msg.delay);
         setStatus('Peer joined. Negotiating connection…');
+        // Start honey drops when first peer joins
+        if (remotePeers.size === 1) {
+          startHoneyDrops();
+        }
         break;
 
       case 'delay-change': {
