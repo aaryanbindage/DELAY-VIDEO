@@ -15,7 +15,7 @@ const volumeSlider = document.getElementById('volume-slider');
 const delaySlider = document.getElementById('delay-slider');
 const delayValueEl = document.getElementById('delay-value');
 const localLabel = document.getElementById('local-label');
-const remoteLabel = document.getElementById('remote-label');
+
 const honeyContainer = document.getElementById('honey-container');
 
 let ws;
@@ -36,7 +36,6 @@ let masterVolume = parseFloat(volumeSlider.value);
 const peerConnections = new Map();
 // peerId -> { container, video, label, placeholder, delay }
 const remotePeers = new Map();
->>>>>>> 86d746e258cb23564473a3b076c948a57cda7c68
 
 // Mutable so the slider can change it live, mid-call.
 const delayState = { value: parseFloat(delaySlider.value) };
@@ -48,6 +47,7 @@ function updateLocalLabel() {
 
 function updateRemoteLabel(peerId) {
   const peer = remotePeers.get(peerId);
+  if (!peer) return;
   if (!peer) return;
   peer.label.textContent = typeof peer.delay === 'number' ? `Peer (${peer.delay}s delayed)` : 'Peer';
 }
@@ -381,6 +381,11 @@ function removeRemoteTile(peerId) {
     pc.close();
     peerConnections.delete(peerId);
   }
+  
+  // Only stop honey drops if no peers remain
+  if (remotePeers.size === 0) {
+    stopHoneyDrops();
+  }
 }
 
 function connectSignaling(room) {
@@ -457,7 +462,6 @@ function connectSignaling(room) {
       case 'peer-left':
         removeRemoteTile(msg.id);
         setStatus('A peer disconnected.');
-        stopHoneyDrops();
         break;
 
       case 'room-full':
@@ -471,6 +475,8 @@ function connectSignaling(room) {
     stopHoneyDrops();
   });
 }
+
+
 
 function createPeerConnection(peerId) {
   const pc = new RTCPeerConnection({
