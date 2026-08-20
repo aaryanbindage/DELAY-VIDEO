@@ -9,7 +9,7 @@
 <body>
   <header>
     <h1>Delay Video Call</h1>
-    <p class="subtitle">A video call where every second of you takes 5 seconds to arrive.</p>
+    <p class="subtitle">A video call where every second of you takes a while to arrive.</p>
   </header>
 
   <main>
@@ -19,6 +19,12 @@
         <input id="room-input" type="text" placeholder="e.g. blue-fox-42" autocomplete="off" />
         <button id="join-btn">Join call</button>
       </div>
+
+      <label for="delay-slider" class="delay-label">
+        Delay: <span id="delay-value">5</span>s
+      </label>
+      <input id="delay-slider" type="range" min="0" max="30" step="0.5" value="5" />
+
       <p id="status" class="status">Enter a room code and share it with the other person, or leave blank to generate one.</p>
       <p id="share-row" class="share-row hidden">
         Share this link: <a id="share-link" href="#"></a>
@@ -29,11 +35,11 @@
     <section id="call" class="call hidden">
       <div class="video-box">
         <video id="local-video" autoplay playsinline muted></video>
-        <span class="label">You (live)</span>
+        <span id="local-label" class="label">You (live)</span>
       </div>
       <div class="video-box">
         <video id="remote-video" autoplay playsinline></video>
-        <span class="label">Peer (5s delayed)</span>
+        <span id="remote-label" class="label">Peer</span>
         <div id="remote-placeholder" class="placeholder">Waiting for peer&hellip;</div>
       </div>
       <div class="controls">
