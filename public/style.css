@@ -101,11 +101,46 @@ button:disabled {
 
 .delay-label {
   margin-top: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+#delay-value {
+  font-weight: 600;
+  color: var(--accent);
 }
 
 #delay-slider {
   width: 100%;
   accent-color: var(--accent);
+  height: 8px;
+  border-radius: 4px;
+  margin-top: 8px;
+  cursor: pointer;
+}
+
+#delay-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  background: var(--accent);
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid white;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+#delay-slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  background: var(--accent);
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid white;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
 }
 
 .status {
@@ -226,7 +261,7 @@ button:disabled {
   font-size: 0.85rem;
 }
 
-.volume-control, .delay-control {
+.volume-control {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -236,17 +271,11 @@ button:disabled {
   border-radius: 8px;
 }
 
-.volume-control .icon, .delay-control .icon {
+.volume-control .icon {
   font-size: 1.2rem;
 }
 
-#delay-value {
-  font-size: 0.85rem;
-  color: var(--muted);
-  min-width: 30px;
-}
-
-#volume-slider, #delay-slider {
+#volume-slider {
   width: 100px;
   height: 6px;
   -webkit-appearance: none;
@@ -255,7 +284,7 @@ button:disabled {
   outline: none;
 }
 
-#volume-slider::-webkit-slider-thumb, #delay-slider::-webkit-slider-thumb {
+#volume-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 16px;
   height: 16px;
@@ -264,7 +293,7 @@ button:disabled {
   cursor: pointer;
 }
 
-#volume-slider::-moz-range-thumb, #delay-slider::-moz-range-thumb {
+#volume-slider::-moz-range-thumb {
   width: 16px;
   height: 16px;
   background: var(--accent);
@@ -285,8 +314,22 @@ button:disabled {
   .control-btn {
     padding: 10px 16px;
   }
-  
+
   #volume-slider {
     width: 80px;
+  }
+
+  #delay-slider {
+    height: 6px;
+  }
+
+  #delay-slider::-webkit-slider-thumb {
+    width: 16px;
+    height: 16px;
+  }
+
+  #delay-slider::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
   }
 }
