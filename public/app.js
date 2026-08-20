@@ -134,22 +134,38 @@ volumeSlider.addEventListener('input', (e) => {
 });
 
 function createHoneyDrop() {
-  const drop = document.createElement('div');
-  drop.className = 'honey-drop';
+  const dipper = document.getElementById('honey-dipper');
   
-  // Random horizontal position
-  const randomX = Math.random() * (window.innerWidth - 20);
-  drop.style.left = `${randomX}px`;
+  // Random horizontal position (keeping dipper fully visible)
+  const randomX = 50 + Math.random() * (window.innerWidth - 100);
   
   // Random fall duration (3-5 seconds)
   const duration = 3 + Math.random() * 2;
-  drop.style.animationDuration = `${duration}s`;
   
-  honeyContainer.appendChild(drop);
+  // Clone the dipper for animation
+  const newDipper = dipper.cloneNode(true);
+  newDipper.style.left = `${randomX}px`;
+  newDipper.style.animationDuration = `${duration}s`;
+  newDipper.classList.add('active');
+  honeyContainer.appendChild(newDipper);
   
-  // Remove drop after animation completes
+  // Create honey drop that falls from the dipper
   setTimeout(() => {
-    drop.remove();
+    const drop = document.createElement('div');
+    drop.className = 'honey-drop';
+    drop.style.left = `${randomX + 15}px`; // Center of dipper
+    drop.style.top = '100px'; // Start below dipper
+    drop.style.animationDuration = `${duration - 1}s`; // Slightly faster than dipper
+    honeyContainer.appendChild(drop);
+    
+    setTimeout(() => {
+      drop.remove();
+    }, (duration - 1) * 1000);
+  }, 500); // Start drop after dipper has moved down a bit
+  
+  // Remove dipper after animation completes
+  setTimeout(() => {
+    newDipper.remove();
   }, duration * 1000);
 }
 
