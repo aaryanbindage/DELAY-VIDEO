@@ -12,6 +12,11 @@ const localVideo = document.getElementById('local-video');
 const remoteVideo = document.getElementById('remote-video');
 const remotePlaceholder = document.getElementById('remote-placeholder');
 const delayCanvas = document.getElementById('delay-canvas');
+const muteBtn = document.getElementById('mute-btn');
+const cameraBtn = document.getElementById('camera-btn');
+const volumeSlider = document.getElementById('volume-slider');
+const delaySlider = document.getElementById('delay-slider');
+const delayValue = document.getElementById('delay-value');
 
 let ws;
 let pc;
@@ -19,6 +24,9 @@ let rawLocalStream;
 let delayedOutgoingStream;
 let audioCtx;
 let frameLoopId;
+let isMuted = false;
+let isCameraOff = false;
+let currentDelay = DELAY_SECONDS;
 
 function setStatus(text) {
   statusEl.textContent = text;
@@ -47,6 +55,62 @@ copyBtn.addEventListener('click', async () => {
     setTimeout(() => (copyBtn.textContent = 'Copy'), 1500);
   } catch {
     // Clipboard API unavailable; user can select the link text manually.
+  }
+});
+
+muteBtn.addEventListener('click', () => {
+  if (!rawLocalStream) return;
+  
+  const audioTrack = rawLocalStream.getAudioTracks()[0];
+  if (audioTrack) {
+    isMuted = !isMuted;
+    audioTrack.enabled = !isMuted;
+    muteBtn.classList.toggle('active', isMuted);
+    muteBtn.querySelector('.status').textContent = isMuted ? 'Unmute' : 'Mute';
+    muteBtn.querySelector('.icon').textContent = isMuted ? '🔇' : '🎤';
+  }
+});
+
+cameraBtn.addEventListener('click', () => {
+  if (!rawLocalStream) return;
+  
+  const videoTrack = rawLocalStream.getVideoTracks()[0];
+  if (videoTrack) {
+    isCameraOff = !isCameraOff;
+    videoTrack.enabled = !isCameraOff;
+    cameraBtn.classList.toggle('active', isCameraOff);
+    cameraBtn.querySelector('.status').textContent = isCameraOff ? 'Camera On' : 'Camera Off';
+    cameraBtn.querySelector('.icon').textContent = isCameraOff ? '📷' : '📹';
+  }
+});
+
+volumeSlider.addEventListener('input', (e) => {
+  remoteVideo.volume = e.target.value;
+});
+
+delaySlider.addEventListener('input', (e) => {
+  const newDelay = parseInt(e.target.value);
+  currentDelay = newDelay;
+  delayValue.textContent = `${newDelay}s`;
+  
+  // Restart delay stream with new delay
+  if (delayedOutgoingStream) {
+    // Stop current delay stream
+    if (frameLoopId) cancelAnimationFrame(frameLoopId);
+    if (audioCtx) audioCtx.close();
+    
+    // Build new delay stream
+    delayedOutgoingStream = buildDelayedStream(rawLocalStream, currentDelay);
+    
+    // Update peer connection with new stream
+    delayedOutgoingStream.getTracks().forEach((track) => {
+      const sender = pc.getSenders().find(s => s.track.kind === track.kind);
+      if (sender) {
+        sender.replaceTrack(track);
+      } else {
+        pc.addTrack(track, delayedOutgoingStream);
+      }
+    });
   }
 });
 
@@ -233,7 +297,7 @@ function setupPeerConnection() {
 
   pc.onconnectionstatechange = () => {
     if (pc.connectionState === 'connected') {
-      setStatus('Connected. Your peer sees you 5 seconds behind real time.');
+      setStatus(`Connected. Your peer sees you ${currentDelay} seconds behind real time.`);
     } else if (['disconnected', 'failed', 'closed'].includes(pc.connectionState)) {
       setStatus(`Connection ${pc.connectionState}.`);
     }
