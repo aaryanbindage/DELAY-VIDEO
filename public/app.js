@@ -4,11 +4,9 @@ const statusEl = document.getElementById('status');
 const shareRow = document.getElementById('share-row');
 const shareLink = document.getElementById('share-link');
 const copyBtn = document.getElementById('copy-btn');
-const setupPanel = document.getElementById('setup');
 const callSection = document.getElementById('call');
+const controlsBar = document.getElementById('controls');
 const localVideo = document.getElementById('local-video');
-const remoteVideo = document.getElementById('remote-video');
-const remotePlaceholder = document.getElementById('remote-placeholder');
 const delayCanvas = document.getElementById('delay-canvas');
 const muteBtn = document.getElementById('mute-btn');
 const cameraBtn = document.getElementById('camera-btn');
@@ -17,10 +15,8 @@ const volumeSlider = document.getElementById('volume-slider');
 const delaySlider = document.getElementById('delay-slider');
 const delayValueEl = document.getElementById('delay-value');
 const localLabel = document.getElementById('local-label');
-const remoteLabel = document.getElementById('remote-label');
 
 let ws;
-let pc;
 let rawLocalStream;
 let delayedOutgoingStream;
 let audioCtx;
@@ -30,21 +26,29 @@ let isMuted = false;
 let isCameraOff = false;
 let screenStream = null;
 let delaySourceVideoEl; // the hidden <video> that buildDelayedStream() reads frames from
+let selfId = null;
+let masterVolume = parseFloat(volumeSlider.value);
+
+// peerId -> RTCPeerConnection
+const peerConnections = new Map();
+// peerId -> { container, video, label, placeholder, delay }
+const remotePeers = new Map();
 
 // Mutable so the slider can change it live, mid-call.
 const delayState = { value: parseFloat(delaySlider.value) };
-let peerDelay = null;
 
 function updateLocalLabel() {
   const activity = screenStream ? 'sharing screen' : 'live';
-  localLabel.textContent = `You (${activity}) — peer sees you ${delayState.value}s delayed`;
+  localLabel.textContent = `You (${activity}) — others see you ${delayState.value}s delayed`;
 }
 
-function updateRemoteLabel() {
-  remoteLabel.textContent = peerDelay === null ? 'Peer' : `Peer (${peerDelay}s delayed)`;
+function updateRemoteLabel(peerId) {
+  const peer = remotePeers.get(peerId);
+  if (!peer) return;
+  peer.label.textContent = typeof peer.delay === 'number' ? `Peer (${peer.delay}s delayed)` : 'Peer';
 }
+
 updateLocalLabel();
-updateRemoteLabel();
 
 delaySlider.addEventListener('input', () => {
   delayState.value = parseFloat(delaySlider.value);
@@ -54,7 +58,7 @@ delaySlider.addEventListener('input', () => {
   if (delayNode) {
     delayNode.delayTime.value = delayState.value;
   }
-  if (ws && ws.readyState === WebSocket.OPEN && pc) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: 'delay-change', delay: delayState.value }));
   }
 });
@@ -91,7 +95,7 @@ copyBtn.addEventListener('click', async () => {
 
 muteBtn.addEventListener('click', () => {
   if (!rawLocalStream) return;
-  
+
   const audioTrack = rawLocalStream.getAudioTracks()[0];
   if (audioTrack) {
     isMuted = !isMuted;
@@ -104,7 +108,7 @@ muteBtn.addEventListener('click', () => {
 
 cameraBtn.addEventListener('click', () => {
   if (!rawLocalStream) return;
-  
+
   const videoTrack = rawLocalStream.getVideoTracks()[0];
   if (videoTrack) {
     isCameraOff = !isCameraOff;
@@ -116,7 +120,10 @@ cameraBtn.addEventListener('click', () => {
 });
 
 volumeSlider.addEventListener('input', (e) => {
-  remoteVideo.volume = e.target.value;
+  masterVolume = parseFloat(e.target.value);
+  for (const peer of remotePeers.values()) {
+    peer.video.volume = masterVolume;
+  }
 });
 
 // Swaps what the delay pipeline reads frames from (camera vs. screen).
@@ -271,6 +278,46 @@ function buildDelayedStream(sourceStream, delayState) {
   return outStream;
 }
 
+function addRemoteTile(peerId, delay) {
+  if (remotePeers.has(peerId)) return remotePeers.get(peerId);
+
+  const container = document.createElement('div');
+  container.className = 'video-box';
+
+  const video = document.createElement('video');
+  video.autoplay = true;
+  video.playsInline = true;
+  video.volume = masterVolume;
+
+  const label = document.createElement('span');
+  label.className = 'label';
+
+  const placeholder = document.createElement('div');
+  placeholder.className = 'placeholder';
+  placeholder.textContent = 'Connecting…';
+
+  container.append(video, label, placeholder);
+  callSection.insertBefore(container, controlsBar);
+
+  const peer = { container, video, label, placeholder, delay };
+  remotePeers.set(peerId, peer);
+  updateRemoteLabel(peerId);
+  return peer;
+}
+
+function removeRemoteTile(peerId) {
+  const peer = remotePeers.get(peerId);
+  if (peer) {
+    peer.container.remove();
+    remotePeers.delete(peerId);
+  }
+  const pc = peerConnections.get(peerId);
+  if (pc) {
+    pc.close();
+    peerConnections.delete(peerId);
+  }
+}
+
 function connectSignaling(room) {
   const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${protocol}://${window.location.host}`);
@@ -283,49 +330,56 @@ function connectSignaling(room) {
     const msg = JSON.parse(event.data);
 
     switch (msg.type) {
-      case 'joined':
-        if (typeof msg.peerDelay === 'number') {
-          peerDelay = msg.peerDelay;
-          updateRemoteLabel();
-        }
+      case 'joined': {
+        selfId = msg.selfId;
         setStatus(
-          msg.initiator
-            ? 'Room joined. Connecting to peer…'
-            : 'Room joined. Waiting for the other person to connect…'
+          msg.peers.length
+            ? `Room joined. Connecting to ${msg.peers.length} peer(s)…`
+            : 'Room joined. Waiting for others to connect…'
         );
-        setupPeerConnection();
-        if (msg.initiator) {
+        // We're the newcomer: initiate a connection to everyone already here.
+        for (const { id, delay } of msg.peers) {
+          addRemoteTile(id, delay);
+          const pc = createPeerConnection(id);
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
-          ws.send(JSON.stringify({ type: 'offer', sdp: offer.sdp }));
+          ws.send(JSON.stringify({ type: 'offer', to: id, sdp: offer.sdp }));
         }
         break;
+      }
 
       case 'peer-joined':
-        peerDelay = msg.peerDelay;
-        updateRemoteLabel();
+        addRemoteTile(msg.id, msg.delay);
         setStatus('Peer joined. Negotiating connection…');
         break;
 
-      case 'delay-change':
-        peerDelay = msg.delay;
-        updateRemoteLabel();
+      case 'delay-change': {
+        const peer = remotePeers.get(msg.from);
+        if (peer) {
+          peer.delay = msg.delay;
+          updateRemoteLabel(msg.from);
+        }
         break;
+      }
 
-      case 'offer':
-        if (!pc) setupPeerConnection();
+      case 'offer': {
+        const pc = peerConnections.get(msg.from) || createPeerConnection(msg.from);
         await pc.setRemoteDescription({ type: 'offer', sdp: msg.sdp });
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
-        ws.send(JSON.stringify({ type: 'answer', sdp: answer.sdp }));
+        ws.send(JSON.stringify({ type: 'answer', to: msg.from, sdp: answer.sdp }));
         break;
+      }
 
-      case 'answer':
-        await pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp });
+      case 'answer': {
+        const pc = peerConnections.get(msg.from);
+        if (pc) await pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp });
         break;
+      }
 
-      case 'ice-candidate':
-        if (msg.candidate) {
+      case 'ice-candidate': {
+        const pc = peerConnections.get(msg.from);
+        if (pc && msg.candidate) {
           try {
             await pc.addIceCandidate(msg.candidate);
           } catch {
@@ -333,15 +387,15 @@ function connectSignaling(room) {
           }
         }
         break;
+      }
 
       case 'peer-left':
-        setStatus('The other person disconnected.');
-        remotePlaceholder.classList.remove('hidden');
-        remoteVideo.srcObject = null;
+        removeRemoteTile(msg.id);
+        setStatus('A peer disconnected.');
         break;
 
       case 'room-full':
-        setStatus('That room already has two people in it. Try a different room code.');
+        setStatus('That room is full. Try a different room code.');
         break;
     }
   });
@@ -351,10 +405,11 @@ function connectSignaling(room) {
   });
 }
 
-function setupPeerConnection() {
-  pc = new RTCPeerConnection({
+function createPeerConnection(peerId) {
+  const pc = new RTCPeerConnection({
     iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
   });
+  peerConnections.set(peerId, pc);
 
   delayedOutgoingStream.getTracks().forEach((track) => {
     pc.addTrack(track, delayedOutgoingStream);
@@ -362,20 +417,23 @@ function setupPeerConnection() {
 
   pc.onicecandidate = (event) => {
     if (event.candidate) {
-      ws.send(JSON.stringify({ type: 'ice-candidate', candidate: event.candidate }));
+      ws.send(JSON.stringify({ type: 'ice-candidate', to: peerId, candidate: event.candidate }));
     }
   };
 
   pc.ontrack = (event) => {
-    remotePlaceholder.classList.add('hidden');
-    remoteVideo.srcObject = event.streams[0];
+    const tile = remotePeers.get(peerId) || addRemoteTile(peerId, null);
+    tile.placeholder.classList.add('hidden');
+    tile.video.srcObject = event.streams[0];
   };
 
   pc.onconnectionstatechange = () => {
     if (pc.connectionState === 'connected') {
-      setStatus(`Connected. Your peer sees you ${delayState.value}s behind real time.`);
-    } else if (['disconnected', 'failed', 'closed'].includes(pc.connectionState)) {
-      setStatus(`Connection ${pc.connectionState}.`);
+      setStatus(`Connected. Others see you ${delayState.value}s behind real time.`);
+    } else if (['failed', 'closed'].includes(pc.connectionState)) {
+      removeRemoteTile(peerId);
     }
   };
+
+  return pc;
 }

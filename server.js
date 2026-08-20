@@ -1,10 +1,12 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
+const MAX_PEERS_PER_ROOM = 8;
 
 const MIME = {
   '.html': 'text/html',
@@ -37,7 +39,7 @@ const server = http.createServer((req, res) => {
 
 const wss = new WebSocketServer({ server });
 
-// roomId -> array of ws clients (max 2)
+// roomId -> Map<peerId, ws>
 const rooms = new Map();
 
 function send(ws, msg) {
@@ -45,7 +47,9 @@ function send(ws, msg) {
 }
 
 wss.on('connection', (ws) => {
+  ws.id = crypto.randomUUID();
   ws.room = null;
+  ws.delay = 0;
 
   ws.on('message', (raw) => {
     let msg;
@@ -59,49 +63,60 @@ wss.on('connection', (ws) => {
       const roomId = String(msg.room || '').slice(0, 64);
       if (!roomId) return;
 
-      const peers = rooms.get(roomId) || [];
-      if (peers.length >= 2) {
+      const room = rooms.get(roomId) || new Map();
+      if (room.size >= MAX_PEERS_PER_ROOM) {
         send(ws, { type: 'room-full' });
         return;
       }
 
       ws.delay = Number(msg.delay) || 0;
 
-      const isInitiator = peers.length === 1;
-      const existing = peers[0];
-      peers.push(ws);
-      rooms.set(roomId, peers);
+      // Tell the newcomer who's already here, so it can initiate a connection to each of them.
+      const existingPeers = Array.from(room.values()).map((peer) => ({ id: peer.id, delay: peer.delay }));
+
+      room.set(ws.id, ws);
+      rooms.set(roomId, room);
       ws.room = roomId;
 
-      send(ws, { type: 'joined', initiator: isInitiator, peerDelay: existing ? existing.delay : undefined });
+      send(ws, { type: 'joined', selfId: ws.id, peers: existingPeers });
 
-      if (isInitiator) {
-        send(existing, { type: 'peer-joined', peerDelay: ws.delay });
+      for (const peer of existingPeers) {
+        send(room.get(peer.id), { type: 'peer-joined', id: ws.id, delay: ws.delay });
       }
       return;
     }
 
+    if (!ws.room) return;
+    const room = rooms.get(ws.room);
+    if (!room) return;
+
     if (msg.type === 'delay-change') {
       ws.delay = Number(msg.delay) || 0;
+      for (const peer of room.values()) {
+        if (peer !== ws) send(peer, { type: 'delay-change', from: ws.id, delay: ws.delay });
+      }
+      return;
     }
 
-    // Relay signaling messages (offer/answer/ice-candidate/delay-change) to the other peer in the room
-    if (['offer', 'answer', 'ice-candidate', 'delay-change'].includes(msg.type)) {
-      const peers = rooms.get(ws.room) || [];
-      const other = peers.find((p) => p !== ws);
-      if (other) send(other, msg);
+    // Directly-routed signaling messages (offer/answer/ice-candidate) carry a `to` peer id.
+    if (['offer', 'answer', 'ice-candidate'].includes(msg.type)) {
+      const target = room.get(msg.to);
+      if (target) send(target, { ...msg, from: ws.id });
     }
   });
 
   ws.on('close', () => {
     if (!ws.room) return;
-    const peers = rooms.get(ws.room) || [];
-    const remaining = peers.filter((p) => p !== ws);
-    if (remaining.length > 0) {
-      send(remaining[0], { type: 'peer-left' });
-      rooms.set(ws.room, remaining);
-    } else {
+    const room = rooms.get(ws.room);
+    if (!room) return;
+
+    room.delete(ws.id);
+    if (room.size === 0) {
       rooms.delete(ws.room);
+    } else {
+      for (const peer of room.values()) {
+        send(peer, { type: 'peer-left', id: ws.id });
+      }
     }
   });
 });
