@@ -18,6 +18,7 @@ const delaySlider = document.getElementById('delay-slider');
 const delayValueEl = document.getElementById('delay-value');
 const localLabel = document.getElementById('local-label');
 const remoteLabel = document.getElementById('remote-label');
+const honeyContainer = document.getElementById('honey-container');
 
 let ws;
 let pc;
@@ -29,7 +30,8 @@ let frameLoopId;
 let isMuted = false;
 let isCameraOff = false;
 let screenStream = null;
-let delaySourceVideoEl; // the hidden <video> that buildDelayedStream() reads frames from
+let delaySourceVideoEl;
+let honeyDropInterval; // the hidden <video> that buildDelayedStream() reads frames from
 
 // Mutable so the slider can change it live, mid-call.
 const delayState = { value: parseFloat(delaySlider.value) };
@@ -57,6 +59,9 @@ delaySlider.addEventListener('input', () => {
   if (ws && ws.readyState === WebSocket.OPEN && pc) {
     ws.send(JSON.stringify({ type: 'delay-change', delay: delayState.value }));
   }
+  
+  // Update honey drop frequency
+  updateHoneyDropFrequency();
 });
 
 function setStatus(text) {
@@ -118,6 +123,61 @@ cameraBtn.addEventListener('click', () => {
 volumeSlider.addEventListener('input', (e) => {
   remoteVideo.volume = e.target.value;
 });
+
+function createHoneyDrop() {
+  const drop = document.createElement('div');
+  drop.className = 'honey-drop';
+  
+  // Random horizontal position
+  const randomX = Math.random() * (window.innerWidth - 20);
+  drop.style.left = `${randomX}px`;
+  
+  // Random fall duration (3-5 seconds)
+  const duration = 3 + Math.random() * 2;
+  drop.style.animationDuration = `${duration}s`;
+  
+  honeyContainer.appendChild(drop);
+  
+  // Remove drop after animation completes
+  setTimeout(() => {
+    drop.remove();
+  }, duration * 1000);
+}
+
+function updateHoneyDropFrequency() {
+  // Clear existing interval
+  if (honeyDropInterval) {
+    clearInterval(honeyDropInterval);
+  }
+  
+  // Get delay value from slider (in seconds)
+  const delaySeconds = delayState.value;
+  
+  // If delay is 0, don't create drops
+  if (delaySeconds <= 0) {
+    return;
+  }
+  
+  // Create drops every X seconds based on delay slider
+  // Using the delay value as the interval
+  honeyDropInterval = setInterval(() => {
+    createHoneyDrop();
+  }, delaySeconds * 1000);
+}
+
+// Start honey drops when call is active
+function startHoneyDrops() {
+  updateHoneyDropFrequency();
+}
+
+function stopHoneyDrops() {
+  if (honeyDropInterval) {
+    clearInterval(honeyDropInterval);
+    honeyDropInterval = null;
+  }
+  // Clear any existing drops
+  honeyContainer.innerHTML = '';
+}
 
 // Swaps what the delay pipeline reads frames from (camera vs. screen).
 // The outgoing WebRTC track is always the canvas capture, so this needs no renegotiation.
@@ -187,6 +247,9 @@ async function joinCall(room) {
 
   localVideo.srcObject = rawLocalStream;
   callSection.classList.remove('hidden');
+  
+  // Start honey drops
+  startHoneyDrops();
 
   const url = new URL(window.location.href);
   url.searchParams.set('room', room);
@@ -338,6 +401,7 @@ function connectSignaling(room) {
         setStatus('The other person disconnected.');
         remotePlaceholder.classList.remove('hidden');
         remoteVideo.srcObject = null;
+        stopHoneyDrops();
         break;
 
       case 'room-full':
@@ -348,6 +412,7 @@ function connectSignaling(room) {
 
   ws.addEventListener('close', () => {
     setStatus('Disconnected from signaling server.');
+    stopHoneyDrops();
   });
 }
 

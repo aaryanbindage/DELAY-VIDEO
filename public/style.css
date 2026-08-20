@@ -333,3 +333,54 @@ button:disabled {
     height: 16px;
   }
 }
+
+#honey-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1000;
+  overflow: hidden;
+}
+
+.honey-drop {
+  position: absolute;
+  width: 20px;
+  height: 30px;
+  background: linear-gradient(180deg, #f4a020 0%, #d4880f 50%, #b8770a 100%);
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  box-shadow: 0 4px 8px rgba(244, 160, 32, 0.4);
+  animation: drop-fall linear forwards;
+  opacity: 0.9;
+}
+
+.honey-drop::before {
+  content: '';
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 8px;
+  height: 12px;
+  background: linear-gradient(180deg, #f4a020 0%, #d4880f 100%);
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+}
+
+@keyframes drop-fall {
+  0% {
+    top: -40px;
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.9;
+  }
+  90% {
+    opacity: 0.9;
+  }
+  100% {
+    top: 100vh;
+    opacity: 0;
+  }
+}
