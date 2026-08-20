@@ -1,5 +1,3 @@
-const DELAY_SECONDS = 5;
-
 const roomInput = document.getElementById('room-input');
 const joinBtn = document.getElementById('join-btn');
 const statusEl = document.getElementById('status');
@@ -12,13 +10,45 @@ const localVideo = document.getElementById('local-video');
 const remoteVideo = document.getElementById('remote-video');
 const remotePlaceholder = document.getElementById('remote-placeholder');
 const delayCanvas = document.getElementById('delay-canvas');
+const delaySlider = document.getElementById('delay-slider');
+const delayValueEl = document.getElementById('delay-value');
+const localLabel = document.getElementById('local-label');
+const remoteLabel = document.getElementById('remote-label');
 
 let ws;
 let pc;
 let rawLocalStream;
 let delayedOutgoingStream;
 let audioCtx;
+let delayNode;
 let frameLoopId;
+
+// Mutable so the slider can change it live, mid-call.
+const delayState = { value: parseFloat(delaySlider.value) };
+let peerDelay = null;
+
+function updateLocalLabel() {
+  localLabel.textContent = `You (live) — peer sees you ${delayState.value}s delayed`;
+}
+
+function updateRemoteLabel() {
+  remoteLabel.textContent = peerDelay === null ? 'Peer' : `Peer (${peerDelay}s delayed)`;
+}
+updateLocalLabel();
+updateRemoteLabel();
+
+delaySlider.addEventListener('input', () => {
+  delayState.value = parseFloat(delaySlider.value);
+  delayValueEl.textContent = delayState.value;
+  updateLocalLabel();
+
+  if (delayNode) {
+    delayNode.delayTime.value = delayState.value;
+  }
+  if (ws && ws.readyState === WebSocket.OPEN && pc) {
+    ws.send(JSON.stringify({ type: 'delay-change', delay: delayState.value }));
+  }
+});
 
 function setStatus(text) {
   statusEl.textContent = text;
@@ -73,16 +103,17 @@ async function joinCall(room) {
   shareLink.textContent = url.toString();
   shareRow.classList.remove('hidden');
 
-  setStatus('Preparing 5-second delay buffer…');
-  delayedOutgoingStream = buildDelayedStream(rawLocalStream, DELAY_SECONDS);
+  setStatus('Preparing delay buffer…');
+  delayedOutgoingStream = buildDelayedStream(rawLocalStream, delayState);
 
   setStatus('Connecting to signaling server…');
   connectSignaling(room);
 }
 
-// Builds a MediaStream that mirrors `sourceStream` but delayed by `seconds`.
+// Builds a MediaStream that mirrors `sourceStream` but delayed by `delayState.value` seconds.
+// `delayState` is read live each frame, so the delay can change mid-call.
 // Video is delayed by buffering frames on a canvas; audio via a Web Audio DelayNode.
-function buildDelayedStream(sourceStream, seconds) {
+function buildDelayedStream(sourceStream, delayState) {
   const videoTrack = sourceStream.getVideoTracks()[0];
   const settings = videoTrack ? videoTrack.getSettings() : {};
   delayCanvas.width = settings.width || 640;
@@ -110,7 +141,7 @@ function buildDelayedStream(sourceStream, seconds) {
     }
 
     let latestDue = null;
-    while (frameQueue.length && frameQueue[0].t <= now - seconds * 1000) {
+    while (frameQueue.length && frameQueue[0].t <= now - delayState.value * 1000) {
       const frame = frameQueue.shift();
       if (latestDue) latestDue.bitmap.close();
       latestDue = frame;
@@ -132,8 +163,8 @@ function buildDelayedStream(sourceStream, seconds) {
   if (audioTrack) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     const source = audioCtx.createMediaStreamSource(new MediaStream([audioTrack]));
-    const delayNode = audioCtx.createDelay(seconds + 1);
-    delayNode.delayTime.value = seconds;
+    delayNode = audioCtx.createDelay(31); // covers the full 0-30s slider range
+    delayNode.delayTime.value = delayState.value;
     const dest = audioCtx.createMediaStreamDestination();
     source.connect(delayNode).connect(dest);
     dest.stream.getAudioTracks().forEach((t) => outStream.addTrack(t));
@@ -147,7 +178,7 @@ function connectSignaling(room) {
   ws = new WebSocket(`${protocol}://${window.location.host}`);
 
   ws.addEventListener('open', () => {
-    ws.send(JSON.stringify({ type: 'join', room }));
+    ws.send(JSON.stringify({ type: 'join', room, delay: delayState.value }));
   });
 
   ws.addEventListener('message', async (event) => {
@@ -155,6 +186,10 @@ function connectSignaling(room) {
 
     switch (msg.type) {
       case 'joined':
+        if (typeof msg.peerDelay === 'number') {
+          peerDelay = msg.peerDelay;
+          updateRemoteLabel();
+        }
         setStatus(
           msg.initiator
             ? 'Room joined. Connecting to peer…'
@@ -169,7 +204,14 @@ function connectSignaling(room) {
         break;
 
       case 'peer-joined':
+        peerDelay = msg.peerDelay;
+        updateRemoteLabel();
         setStatus('Peer joined. Negotiating connection…');
+        break;
+
+      case 'delay-change':
+        peerDelay = msg.delay;
+        updateRemoteLabel();
         break;
 
       case 'offer':
@@ -233,7 +275,7 @@ function setupPeerConnection() {
 
   pc.onconnectionstatechange = () => {
     if (pc.connectionState === 'connected') {
-      setStatus('Connected. Your peer sees you 5 seconds behind real time.');
+      setStatus(`Connected. Your peer sees you ${delayState.value}s behind real time.`);
     } else if (['disconnected', 'failed', 'closed'].includes(pc.connectionState)) {
       setStatus(`Connection ${pc.connectionState}.`);
     }

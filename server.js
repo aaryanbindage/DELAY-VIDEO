@@ -65,22 +65,28 @@ wss.on('connection', (ws) => {
         return;
       }
 
+      ws.delay = Number(msg.delay) || 0;
+
       const isInitiator = peers.length === 1;
+      const existing = peers[0];
       peers.push(ws);
       rooms.set(roomId, peers);
       ws.room = roomId;
 
-      send(ws, { type: 'joined', initiator: isInitiator });
+      send(ws, { type: 'joined', initiator: isInitiator, peerDelay: existing ? existing.delay : undefined });
 
       if (isInitiator) {
-        const other = peers[0];
-        send(other, { type: 'peer-joined' });
+        send(existing, { type: 'peer-joined', peerDelay: ws.delay });
       }
       return;
     }
 
-    // Relay signaling messages (offer/answer/ice-candidate) to the other peer in the room
-    if (['offer', 'answer', 'ice-candidate'].includes(msg.type)) {
+    if (msg.type === 'delay-change') {
+      ws.delay = Number(msg.delay) || 0;
+    }
+
+    // Relay signaling messages (offer/answer/ice-candidate/delay-change) to the other peer in the room
+    if (['offer', 'answer', 'ice-candidate', 'delay-change'].includes(msg.type)) {
       const peers = rooms.get(ws.room) || [];
       const other = peers.find((p) => p !== ws);
       if (other) send(other, msg);
