@@ -25,7 +25,7 @@
       </label>
       <input id="delay-slider" type="range" min="0" max="30" step="0.5" value="5" />
 
-      <p id="status" class="status">Enter a room code and share it with the other person, or leave blank to generate one.</p>
+      <p id="status" class="status">Enter a room code and share it with everyone else joining, or leave blank to generate one.</p>
       <p id="share-row" class="share-row hidden">
         Share this link: <a id="share-link" href="#"></a>
         <button id="copy-btn" type="button">Copy</button>
@@ -37,12 +37,7 @@
         <video id="local-video" autoplay playsinline muted></video>
         <span id="local-label" class="label">You (live)</span>
       </div>
-      <div class="video-box">
-        <video id="remote-video" autoplay playsinline></video>
-        <span id="remote-label" class="label">Peer</span>
-        <div id="remote-placeholder" class="placeholder">Waiting for peer&hellip;</div>
-      </div>
-      <div class="controls">
+      <div class="controls" id="controls">
         <button id="mute-btn" class="control-btn" title="Toggle microphone">
           <span class="icon">🎤</span>
           <span class="status">Mute</span>
