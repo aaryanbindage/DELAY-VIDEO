@@ -253,6 +253,16 @@ button:disabled {
   border-color: var(--accent);
 }
 
+.control-btn.danger {
+  background: #d64545;
+  border-color: #d64545;
+}
+
+.control-btn.danger:hover {
+  background: #e05c5c;
+  border-color: #e05c5c;
+}
+
 .control-btn .icon {
   font-size: 1.2rem;
 }

@@ -11,6 +11,7 @@ const delayCanvas = document.getElementById('delay-canvas');
 const muteBtn = document.getElementById('mute-btn');
 const cameraBtn = document.getElementById('camera-btn');
 const screenShareBtn = document.getElementById('screen-share-btn');
+const hangupBtn = document.getElementById('hangup-btn');
 const volumeSlider = document.getElementById('volume-slider');
 const delaySlider = document.getElementById('delay-slider');
 const delayValueEl = document.getElementById('delay-value');
@@ -176,6 +177,63 @@ function stopScreenShare() {
   screenShareBtn.classList.remove('active');
   screenShareBtn.querySelector('.status').textContent = 'Share Screen';
   screenShareBtn.querySelector('.icon').textContent = '🖥️';
+}
+
+hangupBtn.addEventListener('click', hangUp);
+
+function hangUp() {
+  if (ws) {
+    ws.onclose = null; // avoid the generic "Disconnected" status overwriting the one below
+    ws.close();
+    ws = null;
+  }
+
+  const allPeerIds = new Set([...peerConnections.keys(), ...remotePeers.keys()]);
+  for (const peerId of allPeerIds) {
+    removeRemoteTile(peerId);
+  }
+
+  if (screenStream) {
+    screenStream.getTracks().forEach((t) => t.stop());
+    screenStream = null;
+  }
+  if (rawLocalStream) {
+    rawLocalStream.getTracks().forEach((t) => t.stop());
+    rawLocalStream = null;
+  }
+  if (frameLoopId) {
+    cancelAnimationFrame(frameLoopId);
+    frameLoopId = null;
+  }
+  if (audioCtx) {
+    audioCtx.close();
+    audioCtx = null;
+  }
+  delayNode = null;
+  delaySourceVideoEl = null;
+  delayedOutgoingStream = null;
+  selfId = null;
+
+  localVideo.srcObject = null;
+  callSection.classList.add('hidden');
+  shareRow.classList.add('hidden');
+
+  isMuted = false;
+  isCameraOff = false;
+  muteBtn.classList.remove('active');
+  muteBtn.querySelector('.status').textContent = 'Mute';
+  muteBtn.querySelector('.icon').textContent = '🎤';
+  cameraBtn.classList.remove('active');
+  cameraBtn.querySelector('.status').textContent = 'Camera Off';
+  cameraBtn.querySelector('.icon').textContent = '📷';
+  screenShareBtn.classList.remove('active');
+  screenShareBtn.querySelector('.status').textContent = 'Share Screen';
+  screenShareBtn.querySelector('.icon').textContent = '🖥️';
+
+  joinBtn.disabled = false;
+  roomInput.disabled = false;
+  updateLocalLabel();
+  setStatus('Call ended. Enter a room code to join another call.');
 }
 
 async function joinCall(room) {
@@ -400,9 +458,9 @@ function connectSignaling(room) {
     }
   });
 
-  ws.addEventListener('close', () => {
+  ws.onclose = () => {
     setStatus('Disconnected from signaling server.');
-  });
+  };
 }
 
 function createPeerConnection(peerId) {
