@@ -190,8 +190,8 @@ function stopHoneyDrops() {
     clearInterval(honeyDropInterval);
     honeyDropInterval = null;
   }
-  // Clear any existing drops and hide dipper
-  honeyContainer.innerHTML = '';
+  // Clear any existing drops (but keep the dipper element itself, which lives in the same container) and hide it
+  honeyContainer.querySelectorAll('.honey-drop').forEach((drop) => drop.remove());
   const dipper = document.getElementById('honey-dipper');
   if (dipper) {
     dipper.classList.remove('active');
