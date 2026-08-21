@@ -30,6 +30,7 @@ let isCameraOff = false;
 let screenStream = null;
 let delaySourceVideoEl; // the hidden <video> that buildDelayedStream() reads frames from
 let honeyDropInterval;
+let honeyDripTimeout;
 let selfId = null;
 let masterVolume = parseFloat(volumeSlider.value);
 
@@ -133,30 +134,28 @@ volumeSlider.addEventListener('input', (e) => {
   }
 });
 
+const HONEY_CYCLE_MS = 3000; // must match the dip-and-drip CSS animation duration
+const HONEY_DRIP_AT = 0.64; // fraction of the cycle where the dipper is lowered over the toast
+
 function createHoneyDrop() {
+  const scene = document.getElementById('honey-scene');
   const dipper = document.getElementById('honey-dipper');
-  
-  // Show dipper if not already visible
-  if (!dipper.classList.contains('active')) {
-    dipper.classList.add('active');
-  }
-  
-  // Create honey drop that falls from the dipper
-  const drop = document.createElement('div');
-  drop.className = 'honey-drop';
-  drop.style.left = '50%';
-  drop.style.transform = 'translateX(-50%)';
-  
-  // Random fall duration (2-4 seconds)
-  const duration = 2 + Math.random() * 2;
-  drop.style.animationDuration = `${duration}s`;
-  
-  honeyContainer.appendChild(drop);
-  
-  // Remove drop after animation completes
-  setTimeout(() => {
-    drop.remove();
-  }, duration * 1000);
+  scene.classList.add('active');
+
+  // Restart the dip animation even if a previous cycle is still mid-flight.
+  dipper.classList.remove('dipping');
+  void dipper.offsetWidth;
+  dipper.classList.add('dipping');
+
+  clearTimeout(honeyDripTimeout);
+  honeyDripTimeout = setTimeout(() => {
+    const drop = document.createElement('div');
+    drop.className = 'honey-drop';
+    drop.style.right = '26px';
+    drop.style.top = '58px';
+    scene.appendChild(drop);
+    setTimeout(() => drop.remove(), 900);
+  }, HONEY_CYCLE_MS * HONEY_DRIP_AT);
 }
 
 function updateHoneyDropFrequency() {
@@ -190,12 +189,14 @@ function stopHoneyDrops() {
     clearInterval(honeyDropInterval);
     honeyDropInterval = null;
   }
-  // Clear any existing drops (but keep the dipper element itself, which lives in the same container) and hide it
+  clearTimeout(honeyDripTimeout);
+
+  // Clear any in-flight drops (but keep the dipper/bowl/toast, which live in the same container) and hide the scene.
   honeyContainer.querySelectorAll('.honey-drop').forEach((drop) => drop.remove());
   const dipper = document.getElementById('honey-dipper');
-  if (dipper) {
-    dipper.classList.remove('active');
-  }
+  if (dipper) dipper.classList.remove('dipping');
+  const scene = document.getElementById('honey-scene');
+  if (scene) scene.classList.remove('active');
 }
 
 // Swaps what the delay pipeline reads frames from (camera vs. screen).

@@ -355,22 +355,33 @@ button:disabled {
   overflow: hidden;
 }
 
-#honey-dipper {
+#honey-scene {
   position: fixed;
-  top: 20px;
-  left: 50%;
-  transform: translateX(-50%);
+  bottom: 16px;
+  right: 16px;
+  width: 170px;
+  height: 120px;
   z-index: 1001;
   display: none;
 }
 
-#honey-dipper.active {
+#honey-scene.active {
   display: block;
+}
+
+#honey-dipper {
+  position: absolute;
+  left: 22px;
+  top: -4px;
+}
+
+#honey-dipper.dipping {
+  animation: dip-and-drip 3s ease-in-out;
 }
 
 .dipper-handle {
   width: 6px;
-  height: 80px;
+  height: 60px;
   background: linear-gradient(90deg, #8B4513 0%, #A0522D 50%, #8B4513 100%);
   border-radius: 3px;
   margin: 0 auto;
@@ -378,11 +389,11 @@ button:disabled {
 }
 
 .dipper-head {
-  width: 35px;
-  height: 30px;
+  width: 30px;
+  height: 26px;
   background: linear-gradient(90deg, #8B4513 0%, #A0522D 50%, #8B4513 100%);
   border-radius: 50%;
-  margin: -8px auto 0;
+  margin: -6px auto 0;
   position: relative;
   box-shadow: 2px 2px 4px rgba(0,0,0,0.3);
   overflow: hidden;
@@ -403,31 +414,97 @@ button:disabled {
   animation: coil-spin 2s linear infinite;
 }
 
-.honey-drop {
+.honey-bowl {
   position: absolute;
-  width: 12px;
-  height: 16px;
-  background: linear-gradient(180deg, #f4a020 0%, #d4880f 50%, #b8770a 100%);
-  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
-  box-shadow: 0 4px 8px rgba(244, 160, 32, 0.4);
-  animation: drop-fall linear forwards;
-  opacity: 0.9;
+  left: 4px;
+  bottom: 0;
+  width: 62px;
+  height: 30px;
+  background: linear-gradient(180deg, #c98a45 0%, #8B4513 100%);
+  border-radius: 50%;
+  box-shadow: inset 0 -4px 6px rgba(0, 0, 0, 0.3), 0 2px 3px rgba(0, 0, 0, 0.25);
 }
 
-@keyframes drop-fall {
+.bowl-honey {
+  position: absolute;
+  left: 5px;
+  right: 5px;
+  bottom: 7px;
+  height: 15px;
+  background: radial-gradient(ellipse at center, #f4b73a 0%, #d4880f 70%, #b8770a 100%);
+  border-radius: 50%;
+  box-shadow: inset 0 2px 3px rgba(255, 220, 140, 0.5);
+}
+
+.toast-slice {
+  position: absolute;
+  right: 6px;
+  bottom: 2px;
+  width: 46px;
+  height: 40px;
+  background: linear-gradient(160deg, #e8b872 0%, #d19a52 55%, #b87d3c 100%);
+  border-radius: 6px 6px 18px 18px;
+  box-shadow: inset 0 -4px 6px rgba(120, 75, 30, 0.4), 0 2px 3px rgba(0, 0, 0, 0.25);
+}
+
+.toast-slice::before {
+  content: '';
+  position: absolute;
+  inset: 4px 4px 8px 4px;
+  border-radius: 3px 3px 14px 14px;
+  background: rgba(255, 230, 180, 0.25);
+}
+
+.honey-drop {
+  position: absolute;
+  width: 8px;
+  height: 11px;
+  background: linear-gradient(180deg, #f4a020 0%, #d4880f 50%, #b8770a 100%);
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  box-shadow: 0 2px 4px rgba(244, 160, 32, 0.4);
+  animation: toast-drip 0.8s ease-in forwards;
+  opacity: 0.95;
+}
+
+@keyframes toast-drip {
   0% {
-    top: 110px;
+    transform: translateY(0);
     opacity: 0;
   }
-  10% {
-    opacity: 0.9;
-  }
-  90% {
-    opacity: 0.9;
+  15% {
+    opacity: 0.95;
   }
   100% {
-    top: 100vh;
+    transform: translateY(26px);
     opacity: 0;
+  }
+}
+
+@keyframes dip-and-drip {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(-8deg);
+  }
+  10% {
+    transform: translate(0, 40px) rotate(-4deg);
+  }
+  22% {
+    transform: translate(0, 40px) rotate(-4deg);
+  }
+  34% {
+    transform: translate(0, 0) rotate(-8deg);
+  }
+  55% {
+    transform: translate(84px, 0) rotate(-8deg);
+  }
+  64% {
+    transform: translate(84px, 14px) rotate(4deg);
+  }
+  85% {
+    transform: translate(84px, 14px) rotate(4deg);
+  }
+  95% {
+    transform: translate(84px, 0) rotate(-8deg);
   }
 }
 
