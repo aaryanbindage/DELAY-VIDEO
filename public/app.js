@@ -362,6 +362,13 @@ async function joinCall(room) {
   connectSignaling(room);
 }
 
+// Video has its own encode/decode/render pipeline (canvas -> captureStream -> WebRTC video codec)
+// that adds real latency beyond our intentional buffering, on top of what audio's DelayNode
+// path incurs (audio decode is comparatively instant). Left uncompensated, video visibly lags
+// audio at the receiving end. Buffer video for half a second less than audio so the two land
+// back in sync once video's extra pipeline latency catches it up.
+const VIDEO_SYNC_LEAD_SECONDS = 0.5;
+
 // Builds a MediaStream that mirrors `sourceStream` but delayed by `delayState.value` seconds.
 // `delayState` is read live each frame, so the delay can change mid-call.
 // Video is delayed by buffering frames on a canvas; audio via a Web Audio DelayNode.
@@ -399,8 +406,9 @@ function buildDelayedStream(sourceStream, delayState) {
       }
     }
 
+    const videoDelaySeconds = Math.max(0, delayState.value - VIDEO_SYNC_LEAD_SECONDS);
     let latestDue = null;
-    while (frameQueue.length && frameQueue[0].t <= now - delayState.value * 1000) {
+    while (frameQueue.length && frameQueue[0].t <= now - videoDelaySeconds * 1000) {
       const frame = frameQueue.shift();
       if (latestDue) latestDue.bitmap.close();
       latestDue = frame;
