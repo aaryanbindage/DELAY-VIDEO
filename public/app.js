@@ -136,6 +136,9 @@ volumeSlider.addEventListener('input', (e) => {
 
 const HONEY_CYCLE_MS = 3000; // must match the dip-and-drip CSS animation duration
 const HONEY_DRIP_AT = 0.64; // fraction of the cycle where the dipper is lowered over the toast
+const HONEY_DROP_X = 152; // scene-relative spawn point, under the dipper tip when over the toast
+const HONEY_DROP_Y = 88;
+let honeyPoolLevel = 0;
 
 function createHoneyDrop() {
   const scene = document.getElementById('honey-scene');
@@ -149,12 +152,26 @@ function createHoneyDrop() {
 
   clearTimeout(honeyDripTimeout);
   honeyDripTimeout = setTimeout(() => {
+    const string = document.createElement('div');
+    string.className = 'honey-string';
+    string.style.left = `${HONEY_DROP_X}px`;
+    string.style.top = `${HONEY_DROP_Y}px`;
+    scene.appendChild(string);
+    setTimeout(() => string.remove(), 550);
+
     const drop = document.createElement('div');
     drop.className = 'honey-drop';
-    drop.style.right = '26px';
-    drop.style.top = '58px';
+    drop.style.left = `${HONEY_DROP_X - 1}px`;
+    drop.style.top = `${HONEY_DROP_Y}px`;
     scene.appendChild(drop);
     setTimeout(() => drop.remove(), 900);
+
+    // Each landed drop builds up a little more honey pooling on the toast.
+    honeyPoolLevel = Math.min(honeyPoolLevel + 0.18, 1);
+    setTimeout(() => {
+      const pool = document.getElementById('honey-pool');
+      if (pool) pool.style.setProperty('--pool-scale', honeyPoolLevel);
+    }, 750);
   }, HONEY_CYCLE_MS * HONEY_DRIP_AT);
 }
 
@@ -191,12 +208,17 @@ function stopHoneyDrops() {
   }
   clearTimeout(honeyDripTimeout);
 
-  // Clear any in-flight drops (but keep the dipper/bowl/toast, which live in the same container) and hide the scene.
-  honeyContainer.querySelectorAll('.honey-drop').forEach((drop) => drop.remove());
+  // Clear any in-flight drops/strings (but keep the dipper/bowl/toast, which live in the same container) and hide the scene.
+  honeyContainer.querySelectorAll('.honey-drop, .honey-string').forEach((el) => el.remove());
   const dipper = document.getElementById('honey-dipper');
   if (dipper) dipper.classList.remove('dipping');
   const scene = document.getElementById('honey-scene');
   if (scene) scene.classList.remove('active');
+
+  // Fresh piece of toast next time.
+  honeyPoolLevel = 0;
+  const pool = document.getElementById('honey-pool');
+  if (pool) pool.style.setProperty('--pool-scale', 0);
 }
 
 // Swaps what the delay pipeline reads frames from (camera vs. screen).
