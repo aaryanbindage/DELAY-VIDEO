@@ -17,6 +17,8 @@ const delaySlider = document.getElementById('delay-slider');
 const delayValueEl = document.getElementById('delay-value');
 const localLabel = document.getElementById('local-label');
 
+const honeyContainer = document.getElementById('honey-container');
+
 let ws;
 let rawLocalStream;
 let delayedOutgoingStream;
@@ -27,6 +29,7 @@ let isMuted = false;
 let isCameraOff = false;
 let screenStream = null;
 let delaySourceVideoEl; // the hidden <video> that buildDelayedStream() reads frames from
+let honeyDropInterval;
 let selfId = null;
 let masterVolume = parseFloat(volumeSlider.value);
 
@@ -62,6 +65,9 @@ delaySlider.addEventListener('input', () => {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: 'delay-change', delay: delayState.value }));
   }
+  
+  // Update honey drop frequency
+  updateHoneyDropFrequency();
 });
 
 function setStatus(text) {
@@ -127,6 +133,71 @@ volumeSlider.addEventListener('input', (e) => {
   }
 });
 
+function createHoneyDrop() {
+  const dipper = document.getElementById('honey-dipper');
+  
+  // Show dipper if not already visible
+  if (!dipper.classList.contains('active')) {
+    dipper.classList.add('active');
+  }
+  
+  // Create honey drop that falls from the dipper
+  const drop = document.createElement('div');
+  drop.className = 'honey-drop';
+  drop.style.left = '50%';
+  drop.style.transform = 'translateX(-50%)';
+  
+  // Random fall duration (2-4 seconds)
+  const duration = 2 + Math.random() * 2;
+  drop.style.animationDuration = `${duration}s`;
+  
+  honeyContainer.appendChild(drop);
+  
+  // Remove drop after animation completes
+  setTimeout(() => {
+    drop.remove();
+  }, duration * 1000);
+}
+
+function updateHoneyDropFrequency() {
+  // Clear existing interval
+  if (honeyDropInterval) {
+    clearInterval(honeyDropInterval);
+  }
+  
+  // Get delay value from slider (in seconds)
+  const delaySeconds = delayState.value;
+  
+  // If delay is 0, don't create drops
+  if (delaySeconds <= 0) {
+    return;
+  }
+  
+  // Create drops every X seconds based on delay slider
+  // Using the delay value as the interval
+  honeyDropInterval = setInterval(() => {
+    createHoneyDrop();
+  }, delaySeconds * 1000);
+}
+
+// Start honey drops when call is active
+function startHoneyDrops() {
+  updateHoneyDropFrequency();
+}
+
+function stopHoneyDrops() {
+  if (honeyDropInterval) {
+    clearInterval(honeyDropInterval);
+    honeyDropInterval = null;
+  }
+  // Clear any existing drops and hide dipper
+  honeyContainer.innerHTML = '';
+  const dipper = document.getElementById('honey-dipper');
+  if (dipper) {
+    dipper.classList.remove('active');
+  }
+}
+
 // Swaps what the delay pipeline reads frames from (camera vs. screen).
 // The outgoing WebRTC track is always the canvas capture, so this needs no renegotiation.
 function setDelaySource(stream) {
@@ -182,6 +253,8 @@ function stopScreenShare() {
 hangupBtn.addEventListener('click', hangUp);
 
 function hangUp() {
+  stopHoneyDrops();
+
   if (ws) {
     ws.onclose = null; // avoid the generic "Disconnected" status overwriting the one below
     ws.close();
@@ -374,6 +447,13 @@ function removeRemoteTile(peerId) {
     pc.close();
     peerConnections.delete(peerId);
   }
+  
+  // Only stop honey drops if no peers remain
+  if (remotePeers.size === 0) {
+    stopHoneyDrops();
+    // Hide call section if no peers
+    callSection.classList.add('hidden');
+  }
 }
 
 function connectSignaling(room) {
@@ -409,6 +489,10 @@ function connectSignaling(room) {
       case 'peer-joined':
         addRemoteTile(msg.id, msg.delay);
         setStatus('Peer joined. Negotiating connection…');
+        // Start honey drops when first peer joins
+        if (remotePeers.size === 1) {
+          startHoneyDrops();
+        }
         break;
 
       case 'delay-change': {
@@ -460,8 +544,11 @@ function connectSignaling(room) {
 
   ws.onclose = () => {
     setStatus('Disconnected from signaling server.');
+    stopHoneyDrops();
   };
 }
+
+
 
 function createPeerConnection(peerId) {
   const pc = new RTCPeerConnection({
