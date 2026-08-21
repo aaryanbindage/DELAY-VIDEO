@@ -278,6 +278,10 @@ hangupBtn.addEventListener('click', hangUp);
 function hangUp() {
   stopHoneyDrops();
 
+  clearInterval(syncCalibrationInterval);
+  syncCalibrationInterval = null;
+  videoSyncLeadSeconds = 0.5; // reset the seed; next call's network conditions may differ
+
   if (ws) {
     ws.onclose = null; // avoid the generic "Disconnected" status overwriting the one below
     ws.close();
@@ -358,16 +362,70 @@ async function joinCall(room) {
   setStatus('Preparing delay buffer…');
   delayedOutgoingStream = buildDelayedStream(rawLocalStream, delayState);
 
+  clearInterval(syncCalibrationInterval);
+  syncCalibrationInterval = setInterval(calibrateVideoSyncLead, 2000);
+
   setStatus('Connecting to signaling server…');
   connectSignaling(room);
 }
 
-// Video has its own encode/decode/render pipeline (canvas -> captureStream -> WebRTC video codec)
-// that adds real latency beyond our intentional buffering, on top of what audio's DelayNode
-// path incurs (audio decode is comparatively instant). Left uncompensated, video visibly lags
-// audio at the receiving end. Buffer video for half a second less than audio so the two land
-// back in sync once video's extra pipeline latency catches it up.
-const VIDEO_SYNC_LEAD_SECONDS = 0.5;
+// Video has its own encode/decode/render/jitter-buffer pipeline (canvas -> captureStream ->
+// WebRTC video codec -> receiver jitter buffer) that adds real, *variable* latency beyond our
+// intentional buffering, on top of what audio's DelayNode path incurs (audio decode and jitter
+// buffering are comparatively instant and low-variance). A fixed guess can't track that variance,
+// so this starts as a seed and is continuously corrected by calibrateVideoSyncLead() below using
+// live jitter stats from the connection.
+let videoSyncLeadSeconds = 0.5;
+const VIDEO_SYNC_LEAD_MIN = 0;
+const VIDEO_SYNC_LEAD_MAX = 2;
+let syncCalibrationInterval;
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+// Reads live RTCP receiver-report jitter for the video vs audio RTP streams of each connected
+// peer (RTCRemoteInboundRtpStreamStats.jitter, reported back to us from what the other side
+// actually observed) and nudges videoSyncLeadSeconds toward the real measured gap instead of
+// leaving it at a static guess. Runs on an interval; a single noisy sample only moves the lead
+// by a fraction (see the 0.3 factor below) so it converges smoothly rather than jittering.
+async function calibrateVideoSyncLead() {
+  let deltaSum = 0;
+  let sampleCount = 0;
+
+  for (const pc of peerConnections.values()) {
+    if (pc.connectionState !== 'connected') continue;
+    let stats;
+    try {
+      stats = await pc.getStats();
+    } catch {
+      continue; // getStats can fail transiently mid-negotiation; skip this peer this tick.
+    }
+
+    let videoJitter = null;
+    let audioJitter = null;
+    stats.forEach((report) => {
+      if (report.type === 'remote-inbound-rtp' && typeof report.jitter === 'number') {
+        if (report.kind === 'video') videoJitter = report.jitter;
+        else if (report.kind === 'audio') audioJitter = report.jitter;
+      }
+    });
+
+    if (videoJitter !== null && audioJitter !== null) {
+      deltaSum += videoJitter - audioJitter;
+      sampleCount += 1;
+    }
+  }
+
+  if (sampleCount > 0) {
+    const measuredDelta = deltaSum / sampleCount;
+    videoSyncLeadSeconds = clamp(
+      videoSyncLeadSeconds + measuredDelta * 0.3,
+      VIDEO_SYNC_LEAD_MIN,
+      VIDEO_SYNC_LEAD_MAX
+    );
+  }
+}
 
 // Builds a MediaStream that mirrors `sourceStream` but delayed by `delayState.value` seconds.
 // `delayState` is read live each frame, so the delay can change mid-call.
@@ -406,7 +464,7 @@ function buildDelayedStream(sourceStream, delayState) {
       }
     }
 
-    const videoDelaySeconds = Math.max(0, delayState.value - VIDEO_SYNC_LEAD_SECONDS);
+    const videoDelaySeconds = Math.max(0, delayState.value - videoSyncLeadSeconds);
     let latestDue = null;
     while (frameQueue.length && frameQueue[0].t <= now - videoDelaySeconds * 1000) {
       const frame = frameQueue.shift();
@@ -601,6 +659,18 @@ function createPeerConnection(peerId) {
     const tile = remotePeers.get(peerId) || addRemoteTile(peerId, null);
     tile.placeholder.classList.add('hidden');
     tile.video.srcObject = event.streams[0];
+
+    // Chrome-only, non-standard: ask the receiver to hold back as little extra playout buffer
+    // as it safely can, instead of smoothing jitter with a larger buffer by default. Video
+    // typically has more of this buffering than audio, which is itself a source of A/V drift
+    // beyond what calibrateVideoSyncLead() above can correct for from the sending side alone.
+    if ('playoutDelayHint' in event.receiver) {
+      try {
+        event.receiver.playoutDelayHint = 0;
+      } catch {
+        // Unsupported in this browser; ignore.
+      }
+    }
   };
 
   pc.onconnectionstatechange = () => {
